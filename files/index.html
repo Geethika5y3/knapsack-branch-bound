@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knapsack Branch-and-Bound Visualizer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>0/1 Knapsack: Branch-and-Bound Visualizer</h1>
+  <p>Watch best-first search build the decision tree, compute upper bounds and prune.</p>
+</header>
+
+<main>
+  <section class="card" id="input-card">
+    <h2>Input</h2>
+    <div class="fields">
+      <label>Number of items <input id="n-input" type="number" min="1" value="4"></label>
+      <label>Weights (comma separated) <input id="w-input" type="text" value="2, 3, 4, 5"></label>
+      <label>Profits (comma separated) <input id="p-input" type="text" value="40, 50, 65, 70"></label>
+      <label>Knapsack capacity <input id="c-input" type="number" min="1" value="8"></label>
+    </div>
+    <div id="message" class="message" role="alert"></div>
+    <div class="buttons">
+      <button id="btn-generate" class="primary" title="Validate input and create the root node">Generate Tree</button>
+      <button id="btn-next" title="Run exactly one algorithm step">Next Step</button>
+      <button id="btn-start" class="primary" title="Run automatically">Start Algorithm</button>
+      <button id="btn-pause" title="Pause automatic run">Pause</button>
+      <button id="btn-resume" title="Continue automatic run">Resume</button>
+      <button id="btn-reset" title="Clear the tree and statistics">Reset</button>
+      <button id="btn-example" title="Load the default example">Use Example</button>
+      <label class="speed">Step delay <input id="speed" type="range" min="200" max="1800" step="100" value="900"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Items <small>(sorted by profit/weight so the bound can be computed greedily)</small></h2>
+    <div class="scroll"><table id="item-table"><thead><tr><th>Item</th><th>Weight</th><th>Profit</th><th>Profit/Weight</th></tr></thead><tbody></tbody></table></div>
+    <p class="note" id="sort-note">Sorting by profit/weight ratio is done once, before Branch-and-Bound, because the upper bound fills the knapsack with the best-ratio items first.</p>
+  </section>
+
+  <section class="card tree-card">
+    <h2>Decision tree</h2>
+    <div class="legend">
+      <span><i class="dot live"></i>Live</span><span><i class="dot active"></i>Active</span><span><i class="dot explored"></i>Explored</span><span><i class="dot pruned"></i>Pruned</span><span><i class="dot optimal"></i>Optimal</span>
+      <span class="hint">Left branch = Include (1), right branch = Exclude (0). Click a node for details.</span>
+    </div>
+    <div id="step-message" class="step-message">Press Generate Tree to begin.</div>
+    <div id="tree-scroll" class="tree-scroll"><svg id="tree-svg" width="300" height="100"></svg></div>
+  </section>
+
+  <div class="grid">
+    <section class="card"><h2>Bound calculation</h2><div id="bound-panel" class="panel-text">No node selected.</div></section>
+    <section class="card"><h2>Node details</h2><div id="detail-panel" class="panel-text">Click a node in the tree.</div></section>
+  </div>
+
+  <section class="card">
+    <h2>Live nodes (priority queue, highest bound first)</h2>
+    <div class="scroll"><table id="queue-table"><thead><tr><th>Node</th><th>Level</th><th>Weight</th><th>Profit</th><th>Bound</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="stats" id="stats"></section>
+  <section class="card result" id="result" hidden></section>
+
+  <section class="card">
+    <h2>How Branch-and-Bound works</h2>
+    <ol>
+      <li>Sort the items by profit/weight ratio, highest first.</li>
+      <li>Start at the root node: no items decided, weight 0, profit 0.</li>
+      <li>Calculate the root's upper bound by filling the knapsack greedily and taking a fraction of the first item that does not fit.</li>
+      <li>Pick the most promising live node, the one with the highest bound (best-first search).</li>
+      <li>Branch on the next item: Include it (if it fits) or Exclude it.</li>
+      <li>Calculate the bound of both children.</li>
+      <li>Prune any node whose bound is less than or equal to the best complete profit found so far. It cannot beat the best solution.</li>
+      <li>Repeat until no promising nodes remain. The best solution found is optimal.</li>
+    </ol>
+    <details>
+      <summary>Pseudocode</summary>
+<pre>sort items by profit/weight (descending)
+best = 0
+PQ = max-priority-queue ordered by bound
+root = Node(level=0, weight=0, profit=0)
+root.bound = Bound(root)
+PQ.push(root)
+
+while PQ is not empty:
+    node = PQ.popMax()                // most promising node
+    if node.bound &lt;= best:            // cannot beat best solution
+        prune(node); continue
+    if node.level == n: continue      // leaf: nothing to branch
+    item = items[node.level]
+
+    include = Node(level+1, weight+item.w, profit+item.p)
+    if include.weight &gt; capacity:
+        prune(include)                // infeasible
+    else:
+        best = max(best, include.profit)
+        include.bound = Bound(include)
+        PQ.push(include)
+    exclude = Node(level+1, weight, profit)
+    exclude.bound = Bound(exclude)
+    PQ.push(exclude)
+
+// Nodes whose bound is not above best are pruned when popped.
+
+Bound(node):
+    if node.weight &gt; capacity: return 0
+    b = node.profit; w = node.weight; j = node.level
+    while j &lt; n and w + items[j].w &lt;= capacity:
+        w += items[j].w; b += items[j].p; j++
+    if j &lt; n: b += (capacity - w) * items[j].p / items[j].w
+    return b</pre>
+    </details>
+    <h3>Complexity</h3>
+    <p><b>Time:</b> O(2<sup>n</sup>) in the worst case, since every include/exclude combination could be explored. In practice the bound prunes many subtrees, so far fewer nodes are usually visited.</p>
+    <p><b>Space:</b> O(2<sup>n</sup>) worst case for the live-node queue in best-first search. The tree shown here also stores every generated node.</p>
+  </section>
+</main>
+<script src="script.js"></script>
+</body>
+</html>
